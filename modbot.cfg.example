@@ -1,0 +1,11 @@
+[database]
+system = postgresql
+host = localhost
+database = database_name
+username = database_username
+password = database_password
+
+[reddit]
+user_agent = user_agent (your bot's username is fine, DO NOT FAKE)
+username = reddit_username
+password = reddit_password
