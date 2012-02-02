@@ -215,6 +215,12 @@ def check_condition(item, condition):
             test_string = item.author.name
         else:
             test_string = item.author
+    elif (condition.attribute == 'body' and
+            isinstance(item, reddit.objects.Submission)):
+        # no need to check if it's a body condition and not a self-post
+        if not item.is_self:
+            return None
+        test_string = item.selftext
     elif condition.attribute == 'meme_name':
         test_string = get_meme_name(item)
     else:
