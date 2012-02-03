@@ -235,6 +235,8 @@ def check_condition(item, condition):
         test_string = get_meme_name(item)
     else:
         test_string = getattr(item, condition.attribute)
+        if not test_string:
+            test_string = ''
 
     if re.search('^'+condition.value.lower()+'$',
             test_string.lower(),

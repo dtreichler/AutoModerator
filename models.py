@@ -79,6 +79,8 @@ class Condition(db.Model):
                                   'media_user',
                                   'media_title',
                                   'media_description',
+                                  'author_flair_text',
+                                  'author_flair_css_class',
                                   'meme_name',
                                   name='condition_attribute'),
                           nullable=False)
