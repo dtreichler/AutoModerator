@@ -97,7 +97,7 @@ def check_report_alerts(subreddit):
             attrs={'class': 'rounded reported-stamp stamp'}):
         reports = re.search('(\d+)$', reported_item.text).group(1)
         if int(reports) >= subreddit.report_threshold:
-            permalink = str(reported_item.parent.a["href"])
+            permalink = str(reported_item.parent.a['href'])
             try:
                 # check log to see if this item has already had an alert
                 ActionLog.query.filter(
@@ -217,10 +217,20 @@ def check_condition(item, condition):
             test_string = item.author
     elif (condition.attribute == 'body' and
             isinstance(item, reddit.objects.Submission)):
-        # no need to check if it's a body condition and not a self-post
-        if not item.is_self:
-            return None
         test_string = item.selftext
+    elif condition.attribute.startswith('media_'):
+        if item.media:
+            try:
+                if condition.attribute == 'media_user':
+                    test_string = item.media['oembed']['author_name']
+                elif condition.attribute == 'media_title':
+                    test_string = item.media['oembed']['description']
+                elif condition.attribute == 'media_description':
+                    test_string = item.media['oembed']['description']
+            except KeyError:
+                test_string = ''
+        else:
+            test_string = ''
     elif condition.attribute == 'meme_name':
         test_string = get_meme_name(item)
     else:

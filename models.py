@@ -76,6 +76,9 @@ class Condition(db.Model):
                                   'domain',
                                   'url',
                                   'body',
+                                  'media_user',
+                                  'media_title',
+                                  'media_description',
                                   'meme_name',
                                   name='condition_attribute'),
                           nullable=False)
