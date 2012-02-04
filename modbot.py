@@ -193,10 +193,15 @@ def check_conditions(subreddit, item, all_conditions, action_types, perform=True
             match = False
 
         if match:
-            # only proceed to approve if it wouldn't hit a remove condition too
+            # additional checks before approving
             if condition.action == 'approve':
+                # wouldn't match a remove condition
                 if check_conditions(subreddit, item,
                         all_conditions, 'remove', False):
+                    continue
+
+                # hasn't already been removed by another mod
+                if not in_modqueue(subreddit, item):
                     continue
 
             if perform:
@@ -314,6 +319,24 @@ def check_user_conditions(item, condition):
 
     # user passed all checks
     return not fail_result
+    
+
+def in_modqueue(subreddit, item):
+    """Checks if an item is in a subreddit's modqueue."""
+    for i in subreddit.modqueue_cache:
+        if i.created_utc < item.created_utc:
+            return False
+        if i.id == item.id:
+            return True
+
+    for i in subreddit.modqueue:
+        subreddit.modqueue_cache.append(i)
+        if i.created_utc < item.created_utc:
+            return False
+        if i.id == item.id:
+            return True
+
+    return False
 
 
 def get_meme_name(item):
@@ -359,6 +382,9 @@ def main():
         try:
             subreddit.session = r.get_subreddit(
                                     subreddit.name.encode('ascii', 'ignore'))
+            subreddit.modqueue = \
+                    subreddit.session.get_modqueue(limit=BACKLOG_LIMIT)
+            subreddit.modqueue_cache = list()
             conditions = (subreddit.conditions
                           .filter(Condition.parent_id == None)
                           .all())
