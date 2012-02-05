@@ -60,6 +60,9 @@ class Condition(db.Model):
     parent_id - The id of the condition this is a sub-condition of. If this
         is a top-level condition, will be null
     action - Which action to perform if this condition is matched
+    comment - If set, bot will post (and distinguish) this comment when an
+        action is performed due to this condition
+    notes - not used by bot, space to keep notes on a condition
 
     """
 
@@ -96,6 +99,8 @@ class Condition(db.Model):
                                'remove',
                                'alert',
                                name='action'))
+    comment = db.Column(db.Text)
+    notes = db.Column(db.Text)
 
     subreddit = db.relationship('Subreddit',
         backref=db.backref('conditions', lazy='dynamic'))

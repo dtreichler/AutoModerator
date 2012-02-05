@@ -61,6 +61,23 @@ def perform_action(subreddit, item, action, matched=None):
     sleep(2)
 
 
+def post_comment(item, action, comment):
+    """Posts a distinguished comment as a reply to an item.
+
+    Currently only supports this for submissions.
+    """
+    disclaimer = ('\n\n*I am a bot, and this action was performed '
+                    'automatically. Please [contact the moderators of this '
+                    'subreddit](http://www.reddit.com/message/compose?'
+                    'to=%23'+item.subreddit.display_name+') if you have any '
+                    'questions or concerns.*')
+    if isinstance(item, reddit.objects.Submission):
+        response = item.add_comment(comment+disclaimer)
+        sleep(2)
+        response['data']['things'][0].distinguish()
+        sleep(2)
+
+
 def check_reports(subreddit, conditions):
     """Checks reported items for any matching conditions.
 
@@ -205,6 +222,8 @@ def check_conditions(subreddit, item, all_conditions, action_types, perform=True
                     continue
 
             if perform:
+                if condition.comment:
+                    post_comment(item, condition.action, condition.comment)
                 perform_action(subreddit, item, condition.action, match)
             return True
     return False
