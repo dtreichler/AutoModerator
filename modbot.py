@@ -177,10 +177,12 @@ def check_new_spam(subreddit, conditions):
                 subreddit.last_spam:
             break
 
-        check_conditions(subreddit,
-                         item,
-                         conditions,
-                         ['approve', 'remove'])
+        # only check conditions if it hasn't been manually removed by a mod
+        if in_modqueue(subreddit, item):
+            check_conditions(subreddit,
+                             item,
+                             conditions,
+                             ['approve', 'remove'])
 
     return newest_spam_time
 
@@ -210,15 +212,11 @@ def check_conditions(subreddit, item, all_conditions, action_types, perform=True
             match = False
 
         if match:
-            # additional checks before approving
+            # additional check before approving
             if condition.action == 'approve':
                 # wouldn't match a remove condition
                 if check_conditions(subreddit, item,
                         all_conditions, 'remove', False):
-                    continue
-
-                # hasn't already been removed by another mod
-                if not in_modqueue(subreddit, item):
                     continue
 
             if perform:
