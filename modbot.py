@@ -131,7 +131,9 @@ def check_new_submissions(subreddit, conditions):
     Returns the creation time of the newest item it checks.
     """
     # only check /new if there are removal conditions
-    if not [c for c in conditions if c.action == 'remove']:
+    if not [c for c in conditions
+            if c.subject == 'submission' and
+               c.action == 'remove']:
         return None
 
     newest_submission_time = None
