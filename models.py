@@ -28,6 +28,8 @@ class Subreddit(db.Model):
     last_spam - The newest filtered submission the bot has seen
     report_threshold - Any items with at least this many reports will trigger
         a mod-mail alert
+    auto_reapprove - If True, bot will reapprove any reported submissions
+        that were previously approved by a human mod - use with care
 
     """
 
@@ -39,6 +41,7 @@ class Subreddit(db.Model):
     last_submission = db.Column(db.DateTime)
     last_spam = db.Column(db.DateTime)
     report_threshold = db.Column(db.Integer)
+    auto_reapprove = db.Column(db.Boolean, nullable=False, default=False)
 
 
 class Condition(db.Model):

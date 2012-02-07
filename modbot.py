@@ -101,28 +101,45 @@ def check_reports(subreddit, conditions):
                          'remove')
 
 
-def check_report_alerts(subreddit):
-    """Checks for items with more reports than the subreddit's threshold."""
-    # only check if the subreddit has a report threshold set
-    if not subreddit.report_threshold:
+def check_reports_html(subreddit):
+    """Does report alerts/reapprovals, requires loading HTML page."""
+    # only check if a report alert threshold or auto-reapprove is set
+    if not subreddit.report_threshold and not subreddit.auto_reapprove:
         return
 
     reports_page = subreddit.session.reddit_session._request(
         'http://www.reddit.com/r/'+subreddit.name+'/about/reports')
     soup = BeautifulSoup(reports_page)
-    for reported_item in soup.findAll(
-            attrs={'class': 'rounded reported-stamp stamp'}):
-        reports = re.search('(\d+)$', reported_item.text).group(1)
-        if int(reports) >= subreddit.report_threshold:
-            permalink = str(reported_item.parent.a['href'])
-            try:
-                # check log to see if this item has already had an alert
-                ActionLog.query.filter(
-                    and_(ActionLog.subreddit_id == subreddit.id,
-                         ActionLog.permalink == permalink,
-                         ActionLog.action == 'alert')).one()
-            except NoResultFound:
-                perform_action(subreddit, permalink, 'alert')
+
+    # check for report alerts
+    if subreddit.report_threshold:
+        for reported_item in soup.findAll(
+                attrs={'class': 'rounded reported-stamp stamp'}):
+            reports = re.search('(\d+)$', reported_item.text).group(1)
+            if int(reports) >= subreddit.report_threshold:
+                permalink = str(reported_item.parent.a['href'])
+                try:
+                    # check log to see if this item has already had an alert
+                    ActionLog.query.filter(
+                        and_(ActionLog.subreddit_id == subreddit.id,
+                             ActionLog.permalink == permalink,
+                             ActionLog.action == 'alert')).one()
+                except NoResultFound:
+                    perform_action(subreddit, permalink, 'alert')
+
+    # do auto-reapprovals
+    if subreddit.auto_reapprove:
+        for approved_item in soup.findAll(
+                attrs={'class': 'approval-checkmark'}):
+            if approved_item['title'].lower() != \
+                    'approved by '+cfg_file.get('reddit', 'username').lower():
+                permalink = approved_item.parent.parent.findAll(
+                                attrs={'class': re.compile('comments')}
+                            )[0]['href']
+                sub = (subreddit.session
+                        .reddit_session.get_submission(permalink))
+                sub.approve()
+                sleep(2)
 
 
 def check_new_submissions(subreddit, conditions):
@@ -410,7 +427,7 @@ def main():
 
             check_reports(subreddit, conditions)
 
-            check_report_alerts(subreddit)
+            check_reports_html(subreddit)
 
             newest_spam_time = check_new_spam(subreddit, conditions)
 
