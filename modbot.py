@@ -17,13 +17,30 @@ BACKLOG_LIMIT = 100
 REPORT_BACKLOG_LIMIT = timedelta(days=2)
 
 
-def perform_action(subreddit, item, action, matched=None):
-    """Performs the specified action and creates an ActionLog entry."""
-    if action == 'remove':
+def perform_action(subreddit, item, condition):
+    """Performs the action for the condition(s) and creates an ActionLog entry."""
+    # post the comment if one is set
+    if isinstance(condition, list):
+        if any([c.comment for c in condition]):
+            comment = ('This has been '+condition[0].action+'d for the '
+                       'following reasons:\n\n')
+            for c in condition:
+                if c.comment:
+                    comment += '* '+c.comment+'\n'
+            post_comment(item, comment)
+
+            # bit of a hack and only logs first action matched
+            # should find a better method
+            condition = condition[0]
+    elif condition.comment:
+        post_comment(item, condition.comment)
+
+    # perform the action
+    if condition.action == 'remove':
         item.remove()
-    elif action == 'approve':
+    elif condition.action == 'approve':
         item.approve()
-    elif action == 'alert':
+    elif condition.action == 'alert':
         subreddit.session.reddit_session.compose_message(
             '#'+subreddit.name,
             'Reported Item Alert',
@@ -34,7 +51,7 @@ def perform_action(subreddit, item, action, matched=None):
     action_log = ActionLog()
     action_log.subreddit_id = subreddit.id
     action_log.action_time = datetime.utcnow()
-    action_log.action = action
+    action_log.action = condition.action
 
     if isinstance(item, str):
         # for report threshold alert, we only know permalink to item
@@ -42,7 +59,7 @@ def perform_action(subreddit, item, action, matched=None):
     else:
         action_log.user = item.author.name
         action_log.created_utc = datetime.utcfromtimestamp(item.created_utc)
-        action_log.matched_condition = matched
+        action_log.matched_condition = condition.id
 
     if isinstance(item, reddit.objects.Submission):
         action_log.title = item.title
@@ -61,7 +78,7 @@ def perform_action(subreddit, item, action, matched=None):
     sleep(2)
 
 
-def post_comment(item, action, comment):
+def post_comment(item, comment):
     """Posts a distinguished comment as a reply to an item.
 
     Currently only supports this for submissions.
@@ -209,7 +226,9 @@ def check_new_spam(subreddit, conditions):
 def check_conditions(subreddit, item, all_conditions, action_types, perform=True):
     """Checks an item against a set of conditions.
 
-    Returns True if a condition matches, or False if none match.
+    Returns the first condition that matches, or a list of all conditions that
+    match if check_all_conditions is set on the subreddit. Returns None if no
+    conditions match.
 
     action_types restricts checked conditions to particular action(s).
     Setting perform to False will check, but not actually perform if matched.
@@ -223,6 +242,7 @@ def check_conditions(subreddit, item, all_conditions, action_types, perform=True
 
     conditions = [c for c in all_conditions
                   if c.action in action_types]
+    matched = list()
 
     for condition in conditions:
         try:
@@ -238,18 +258,24 @@ def check_conditions(subreddit, item, all_conditions, action_types, perform=True
                         all_conditions, 'remove', False):
                     continue
 
-            if perform:
-                if condition.comment:
-                    post_comment(item, condition.action, condition.comment)
-                perform_action(subreddit, item, condition.action, match)
-            return True
-    return False
+            if subreddit.check_all_conditions:
+                matched.append(condition)
+            else:
+                if perform:
+                    perform_action(subreddit, item, condition)
+                return condition
+
+    if subreddit.check_all_conditions and len(matched) > 0:
+        if perform:
+            perform_action(subreddit, item, matched)
+        return matched
+    return None
 
 
 def check_condition(item, condition):
     """Checks an item against a single condition (and sub-conditions).
     
-    Returns the condition's ID if it matches.
+    Returns True if it matches, or False if not
     """
     if condition.attribute == 'user':
         if item.author != '[deleted]':
@@ -302,10 +328,7 @@ def check_condition(item, condition):
                 satisfied = False
                 break
 
-    if satisfied:
-        return condition.id
-    else:
-        return None
+    return satisfied
 
 
 def check_user_conditions(item, condition):

@@ -30,6 +30,11 @@ class Subreddit(db.Model):
         a mod-mail alert
     auto_reapprove - If True, bot will reapprove any reported submissions
         that were previously approved by a human mod - use with care
+    check_all_conditions - If True, the bot will not stop and perform the
+        action as soon as a single condition is matched, but will create
+        a list of all matching conditions. This can be useful for subreddits
+        with strict rules where a comment should include all reasons the post
+        was removed.
 
     """
 
@@ -42,6 +47,7 @@ class Subreddit(db.Model):
     last_spam = db.Column(db.DateTime)
     report_threshold = db.Column(db.Integer)
     auto_reapprove = db.Column(db.Boolean, nullable=False, default=False)
+    check_all_conditions = db.Column(db.Boolean, nullable=False, default=False)
 
 
 class Condition(db.Model):
