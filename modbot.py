@@ -8,7 +8,8 @@ from BeautifulSoup import BeautifulSoup
 from sqlalchemy.sql import and_
 from sqlalchemy.orm.exc import NoResultFound
 
-from models import cfg_file, db, Subreddit, Condition, ActionLog
+from models import cfg_file, db, Subreddit, Condition, ActionLog, \
+    AutoReapproval
 
 # maximum number of items to check in new/spam
 BACKLOG_LIMIT = 100
@@ -29,9 +30,9 @@ def perform_action(subreddit, item, condition):
                     comment += '* '+c.comment+'\n'
             post_comment(item, comment)
 
-            # bit of a hack and only logs first action matched
-            # should find a better method
-            condition = condition[0]
+        # bit of a hack and only logs first action matched
+        # should find a better method
+        condition = condition[0]
     elif condition.comment:
         post_comment(item, condition.comment)
 
@@ -148,13 +149,41 @@ def check_reports_html(subreddit):
     if subreddit.auto_reapprove:
         for approved_item in soup.findAll(
                 attrs={'class': 'approval-checkmark'}):
-            if approved_item['title'].lower() != \
-                    'approved by '+cfg_file.get('reddit', 'username').lower():
-                permalink = approved_item.parent.parent.findAll(
-                                attrs={'class': re.compile('comments')}
-                            )[0]['href']
-                sub = (subreddit.session
-                        .reddit_session.get_submission(permalink))
+            report_stamp = approved_item.parent.parent.findAll(
+                            attrs={'class': 'rounded reported-stamp stamp'})
+            num_reports = re.search('(\d+)$', report_stamp[0].text).group(1)
+            num_reports = int(num_reports)
+            permalink = approved_item.parent.parent.findAll(
+                            attrs={'class': re.compile('comments')}
+                        )[0]['href']
+            sub = (subreddit.session.reddit_session.get_submission(permalink))
+
+            try:
+                # see if this item has already been auto-reapproved
+                entry = (AutoReapproval.query.filter(
+                            and_(AutoReapproval.subreddit_id == subreddit.id,
+                                 AutoReapproval.permalink == permalink))
+                            .one())
+                in_db = True
+            except NoResultFound:
+                entry = AutoReapproval()
+                entry.subreddit_id = subreddit.id
+                entry.permalink = permalink
+                entry.original_approver = (re.search('approved by (.+)$',
+                                                     approved_item['title'])
+                                           .group(1))
+                entry.total_reports = 0
+                entry.first_approval_time = datetime.utcnow()
+                in_db = False
+
+            if (in_db or
+                    approved_item['title'].lower() != \
+                    'approved by '+cfg_file.get('reddit', 'username').lower()):
+                entry.total_reports += num_reports
+                entry.last_approval_time = datetime.utcnow()
+
+                db.session.add(entry)
+                db.session.commit()
                 sub.approve()
                 sleep(2)
 

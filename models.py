@@ -145,3 +145,21 @@ class ActionLog(db.Model):
     condition = db.relationship('Condition',
         backref=db.backref('actions', lazy='dynamic'))
 
+
+class AutoReapproval(db.Model):
+    """Table keeping track of posts that have been auto-reapproved."""
+    __tablename__ = 'auto_reapprovals'
+
+    id = db.Column(db.Integer, primary_key=True)
+    subreddit_id = db.Column(db.Integer,
+                             db.ForeignKey('subreddits.id'),
+                             nullable=False)
+    permalink = db.Column(db.String(255))
+    original_approver = db.Column(db.String(255))
+    total_reports = db.Column(db.Integer, nullable=False, default=0)
+    first_approval_time = db.Column(db.DateTime)
+    last_approval_time = db.Column(db.DateTime)
+
+    subreddit = db.relationship('Subreddit',
+        backref=db.backref('auto_reapprovals', lazy='dynamic'))
+
