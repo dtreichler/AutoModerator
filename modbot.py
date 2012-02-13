@@ -244,13 +244,10 @@ def check_new_spam(subreddit, conditions):
 
         # only check conditions if it hasn't been manually removed by a mod
         if in_modqueue(subreddit, item):
-            matched = check_conditions(subreddit,
-                                       item,
-                                       conditions,
-                                       ['approve', 'remove'])
-            # respond to modmail if any was sent
-            if matched:
-                respond_to_modmail(subreddit, item)
+            check_conditions(subreddit,
+                             item,
+                             conditions,
+                             ['approve', 'remove'])
 
     return newest_spam_time
 
@@ -430,39 +427,45 @@ def in_modqueue(subreddit, item):
     return False
 
 
-def respond_to_modmail(subreddit, item):
-    """Responds to modmail if the item's submitter sent one before approval."""
-    found = None
-    done = False
+def respond_to_modmail(modmail, start_time):
+    """Responds to modmail if any submitters sent one before approval."""
+    cache = list()
+    approvals = ActionLog.query.filter(
+                    and_(ActionLog.action == 'approve',
+                         ActionLog.action_time >= start_time)).all()
 
-    for i in subreddit.session.reddit_session.user.modmail_cache:
-        if i.created_utc < item.created_utc:
-            done = True
-            break
-        if (i.dest.lower() == '#'+subreddit.name.lower() and
-                i.author.name == item.author.name and
-                not i.replies):
-            found = i
-            break
+    for item in approvals:
+        found = None
+        done = False
 
-    if not found and not done:
-        for i in subreddit.session.reddit_session.user.modmail:
-            subreddit.session.reddit_session.user.modmail_cache.append(i)
-            if i.created_utc < item.created_utc:
+        for i in cache:
+            if datetime.utcfromtimestamp(i.created_utc) < item.created_utc:
+                done = True
                 break
-            if (i.dest.lower() == '#'+subreddit.name.lower() and
-                    i.author.name == item.author.name and
+            if (i.dest.lower() == '#'+item.subreddit.name.lower() and
+                    i.author.name == item.user and
                     not i.replies):
                 found = i
                 break
 
-    if found:
-        found.reply('Your submission has been approved automatically by '+
-            cfg_file.get('reddit', 'username')+'. For future submissions '
-            'please wait at least 5 minutes before messaging the mods, '
-            'this post would have been approved automatically even without '
-            'you sending this message.')
-        sleep(2)
+        if not found and not done:
+            for i in modmail:
+                cache.append(i)
+                if datetime.utcfromtimestamp(i.created_utc) < item.created_utc:
+                    break
+                if (i.dest.lower() == '#'+item.subreddit.name.lower() and
+                        i.author.name == item.user and
+                        not i.replies):
+                    found = i
+                    break
+
+        if found:
+            found.reply('Your submission has been approved automatically by '+
+                cfg_file.get('reddit', 'username')+'. For future submissions '
+                'please wait at least 5 minutes before messaging the mods, '
+                'this post would have been approved automatically even '
+                'without you sending this message.')
+            sleep(2)
 
 
 def get_meme_name(item):
@@ -498,11 +501,11 @@ def get_meme_name(item):
 
 
 def main():
+    start_time = datetime.utcnow()
+
     r = reddit.Reddit(user_agent=cfg_file.get('reddit', 'user_agent'))
     r.login(cfg_file.get('reddit', 'username'),
         cfg_file.get('reddit', 'password'))
-    r.user.modmail = r.user.get_modmail()
-    r.user.modmail_cache = list()
 
     subreddits = Subreddit.query.filter(Subreddit.enabled == True).all()
 
@@ -533,6 +536,9 @@ def main():
             db.session.commit()
         except Exception as e:
             print e
+
+    respond_to_modmail(r.user.get_modmail(), start_time)
+
 
 if __name__ == '__main__':
     main()
