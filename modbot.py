@@ -143,7 +143,9 @@ def check_reports_html(subreddit):
                              ActionLog.permalink == permalink,
                              ActionLog.action == 'alert')).one()
                 except NoResultFound:
-                    perform_action(subreddit, permalink, 'alert')
+                    c = Condition()
+                    c.action = 'alert'
+                    perform_action(subreddit, permalink, c)
 
     # do auto-reapprovals
     if subreddit.auto_reapprove:
