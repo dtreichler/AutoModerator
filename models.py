@@ -35,6 +35,9 @@ class Subreddit(db.Model):
         a list of all matching conditions. This can be useful for subreddits
         with strict rules where a comment should include all reasons the post
         was removed.
+    reported_comments_only - If True, will only check conditions against
+        reported comments. If False, checks all comments in the subreddit.
+        Extremely-active subreddits are probably best set to True.
 
     """
 
@@ -43,11 +46,14 @@ class Subreddit(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, unique=True)
     enabled = db.Column(db.Boolean, nullable=False, default=True)
-    last_submission = db.Column(db.DateTime)
-    last_spam = db.Column(db.DateTime)
+    last_submission = db.Column(db.DateTime, nullable=False)
+    last_spam = db.Column(db.DateTime, nullable=False)
+    last_comment = db.Column(db.DateTime, nullable=False)
     report_threshold = db.Column(db.Integer)
     auto_reapprove = db.Column(db.Boolean, nullable=False, default=False)
     check_all_conditions = db.Column(db.Boolean, nullable=False, default=False)
+    reported_comments_only = db.Column(db.Boolean, nullable=False,
+                                       default=False)
 
 
 class Condition(db.Model):

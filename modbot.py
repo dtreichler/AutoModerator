@@ -254,6 +254,38 @@ def check_new_spam(subreddit, conditions):
     return newest_spam_time
 
 
+def check_new_comments(subreddit, conditions):
+    """Checks new items on the /comments page for any matching conditions.
+
+    Returns the creation time of the newest item it checks.
+    """
+    # only check /comments if there are removal conditions
+    if not [c for c in conditions
+            if c.subject == 'comment' and
+               c.action == 'remove']:
+        return None
+
+    newest_comment_time = None
+
+    for item in subreddit.session.get_comments():
+        if (not newest_comment_time and
+                subreddit.last_comment < \
+                datetime.utcfromtimestamp(item.created_utc)):
+            newest_comment_time = \
+                datetime.utcfromtimestamp(item.created_utc)
+
+        if datetime.utcfromtimestamp(item.created_utc) <= \
+                subreddit.last_comment:
+            break
+
+        check_conditions(subreddit,
+                         item,
+                         conditions,
+                         'remove')
+
+    return newest_comment_time
+
+
 def check_conditions(subreddit, item, all_conditions, action_types, perform=True):
     """Checks an item against a set of conditions.
 
@@ -531,10 +563,18 @@ def main():
             newest_submission_time = \
                     check_new_submissions(subreddit, conditions)
 
+            if not subreddit.reported_comments_only:
+                newest_comment_time = \
+                        check_new_comments(subreddit, conditions)
+            else:
+                newest_comment_time = None
+
             if newest_submission_time:
                 subreddit.last_submission = newest_submission_time
             if newest_spam_time:
                 subreddit.last_spam = newest_spam_time
+            if newest_comment_time:
+                subreddit.last_comment = newest_comment_time
             db.session.commit()
         except Exception as e:
             print e
