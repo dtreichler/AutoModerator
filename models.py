@@ -66,10 +66,10 @@ class Condition(db.Model):
         by ^ and $ when checked, so looks for "whole string" matches. To
         do a "contains" check, put .* on each end
     is_gold - If True, item's author must have reddit gold
-    min_account_age - Minimum account age (in days) for the item's author
-    min_link_karma - Minimum link karma for the item's author
-    min_comment_karma - Minimum comment karma for the item's author
-    min_combined_karma - Minimum combined karma for the item's author
+    account_age - Account age condition (in days) for the item's author
+    link_karma - Link karma condition for the item's author
+    comment_karma - Comment karma condition for the item's author
+    combined_karma - Combined karma condition for the item's author
     inverse - If True, result of check will be reversed. Useful for
         "anything except" or "does not include"-type checks
     parent_id - The id of the condition this is a sub-condition of. If this
@@ -103,11 +103,11 @@ class Condition(db.Model):
                                   name='condition_attribute'),
                           nullable=False)
     value = db.Column(db.Text, nullable=False)
-    is_gold = db.Column(db.Boolean, nullable=False, default=False)
-    min_account_age = db.Column(db.Integer, nullable=False, default=0)
-    min_link_karma = db.Column(db.Integer, nullable=False, default=0)
-    min_comment_karma = db.Column(db.Integer, nullable=False, default=0)
-    min_combined_karma = db.Column(db.Integer, nullable=False, default=0)
+    is_gold = db.Column(db.Boolean)
+    account_age = db.Column(db.Integer)
+    link_karma = db.Column(db.Integer)
+    comment_karma = db.Column(db.Integer)
+    combined_karma = db.Column(db.Integer)
     inverse = db.Column(db.Boolean, nullable=False, default=False)
     parent_id = db.Column(db.Integer, db.ForeignKey('conditions.id'))
     action = db.Column(db.Enum('approve',

@@ -397,11 +397,11 @@ def check_condition(item, condition):
 def check_user_conditions(item, condition):
     """Checks an item's author against the age/karma/has-gold requirements."""
     # if no user conditions are set, no need to check at all
-    if (not condition.is_gold and
-            condition.min_link_karma == 0 and
-            condition.min_comment_karma == 0 and
-            condition.min_combined_karma == 0 and
-            condition.min_account_age == 0):
+    if (condition.is_gold is None and
+            condition.link_karma is None and
+            condition.comment_karma is None and
+            condition.combined_karma is None and
+            condition.account_age is None):
         return True
 
     # returning True will result in the action being performed
@@ -423,21 +423,28 @@ def check_user_conditions(item, condition):
         return fail_result
 
     # reddit gold check
-    if condition.is_gold and not user.is_gold:
-        return fail_result
+    if condition.is_gold is not None:
+        if condition.is_gold != user.is_gold:
+            return fail_result
 
     # karma checks
-    if (user.link_karma < condition.min_link_karma or
-            user.comment_karma < condition.min_comment_karma or
-            (user.link_karma + user.comment_karma) \
-                < condition.min_combined_karma):
-        return fail_result
+    if condition.link_karma is not None:
+        if user.link_karma < condition.link_karma:
+            return fail_result
+    if condition.comment_karma is not None:
+        if user.comment_karma < condition.comment_karma:
+            return fail_result
+    if condition.combined_karma is not None:
+        if (user.link_karma + user.comment_karma) \
+                < condition.combined_karma:
+            return fail_result
 
     # account age check
-    if (datetime.utcnow() \
-            - datetime.utcfromtimestamp(user.created_utc)).days \
-            < condition.min_account_age:
-        return fail_result
+    if condition.account_age is not None:
+        if (datetime.utcnow() \
+                - datetime.utcfromtimestamp(user.created_utc)).days \
+                < condition.account_age:
+            return fail_result
 
     # user passed all checks
     return not fail_result
