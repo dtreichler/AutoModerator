@@ -398,6 +398,7 @@ def check_user_conditions(item, condition):
     """Checks an item's author against the age/karma/has-gold requirements."""
     # if no user conditions are set, no need to check at all
     if (condition.is_gold is None and
+            condition.is_shadowbanned is None and
             condition.link_karma is None and
             condition.comment_karma is None and
             condition.combined_karma is None and
@@ -416,11 +417,15 @@ def check_user_conditions(item, condition):
     if item.author == '[deleted]':
         return fail_result
 
-    try: # try to get user info and overview
-        user = item.reddit_session.get_redditor(item.author)
-        list(user.get_overview(limit=1))
-    except: # if that failed, they're probably ghost-banned
-        return fail_result
+    # get user info
+    user = item.reddit_session.get_redditor(item.author)
+
+    # shadowbanned check
+    if condition.is_shadowbanned is not None:
+        try: # try to get user overview
+            list(user.get_overview(limit=1))
+        except: # if that failed, they're probably shadowbanned
+            return fail_result
 
     # reddit gold check
     if condition.is_gold is not None:

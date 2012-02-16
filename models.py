@@ -65,7 +65,8 @@ class Condition(db.Model):
     value - A regex checked against the attribute. Automatically surrounded
         by ^ and $ when checked, so looks for "whole string" matches. To
         do a "contains" check, put .* on each end
-    is_gold - If True, item's author must have reddit gold
+    is_gold - Whether the author has reddit gold or not
+    is_shadowbanned - Whether the author is "shadowbanned" or not
     account_age - Account age condition (in days) for the item's author
     link_karma - Link karma condition for the item's author
     comment_karma - Comment karma condition for the item's author
@@ -104,6 +105,7 @@ class Condition(db.Model):
                           nullable=False)
     value = db.Column(db.Text, nullable=False)
     is_gold = db.Column(db.Boolean)
+    is_shadowbanned = db.Column(db.Boolean)
     account_age = db.Column(db.Integer)
     link_karma = db.Column(db.Integer)
     comment_karma = db.Column(db.Integer)
