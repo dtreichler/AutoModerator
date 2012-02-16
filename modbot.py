@@ -508,7 +508,7 @@ def get_meme_name(item):
     if item.domain in ['quickmeme.com', 'qkme.me']:
         url = item.url
     elif item.domain == 'i.qkme.me':
-        matches = re.search('/(.+)\.jpg$', item.url)
+        matches = re.search('.+/(.+?)\.jpg$', item.url)
         url = 'http://qkme.me/'+matches.group(1)
     elif item.domain.endswith('memegenerator.net'):
         for regex in ['/instance/(\\d+)$', '(\\d+)\.jpg$']:
