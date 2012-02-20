@@ -11,9 +11,6 @@ from sqlalchemy.orm.exc import NoResultFound
 from models import cfg_file, db, Subreddit, Condition, ActionLog, \
     AutoReapproval
 
-# maximum number of items to check in new/spam
-BACKLOG_LIMIT = 100
-
 # don't remove/approve any reports older than this (doesn't apply to alerts)
 REPORT_BACKLOG_LIMIT = timedelta(days=2)
 
@@ -96,29 +93,6 @@ def post_comment(item, comment):
         sleep(2)
 
 
-def check_reports(subreddit, conditions):
-    """Checks reported items for any matching conditions.
-
-    Currently only supports removing comments.
-
-    """
-    # only check reports if there are comment removal conditions
-    if not [c for c in conditions
-            if c.subject == 'comment' and
-               c.action == 'remove']:
-        return
-
-    for item in subreddit.session.get_reports(limit=None):
-        if datetime.utcnow() - datetime.utcfromtimestamp(item.created_utc) \
-                > REPORT_BACKLOG_LIMIT:
-            break
-
-        check_conditions(subreddit,
-                         item,
-                         [c for c in conditions if c.subject == 'comment'],
-                         'remove')
-
-
 def check_reports_html(subreddit):
     """Does report alerts/reapprovals, requires loading HTML page."""
     # only check if a report alert threshold or auto-reapprove is set
@@ -190,121 +164,45 @@ def check_reports_html(subreddit):
                 sleep(2)
 
 
-def check_new_submissions(subreddit, conditions):
-    """Checks new items on the /new page for any matching conditions.
+def check_items(subreddit, items, conditions, stop_time, modqueue=False):
+    """Checks the items generator for any matching conditions.
 
     Returns the creation time of the newest item it checks.
     """
-    # only check /new if there are removal conditions
-    if not [c for c in conditions
-            if c.subject == 'submission' and
-               c.action == 'remove']:
+    if not conditions:
         return None
 
-    newest_submission_time = None
+    newest_item_time = None
 
-    for item in subreddit.session.get_new_by_date(limit=BACKLOG_LIMIT):
-        if (not newest_submission_time and
-                subreddit.last_submission < \
-                datetime.utcfromtimestamp(item.created_utc)):
-            newest_submission_time = \
-                datetime.utcfromtimestamp(item.created_utc)
-
-        if datetime.utcfromtimestamp(item.created_utc) <= \
-                subreddit.last_submission:
+    for item in items:
+        item_time = datetime.utcfromtimestamp(item.created_utc)
+        if not newest_item_time and stop_time < item_time:
+            newest_item_time = item_time
+        elif item_time <= stop_time:
             break
+        
+        if not modqueue or in_modqueue(subreddit, item):
+            check_conditions(subreddit, item, conditions)
 
-        check_conditions(subreddit,
-                         item,
-                         conditions,
-                         'remove')
-
-    return newest_submission_time
+    return newest_item_time
 
 
-def check_new_spam(subreddit, conditions):
-    """Checks new items on the /about/spam page for any matching conditions.
-
-    Returns the creation time of the newest item it checks.
-    """
-    # only check spam if there are removal or approval conditions
-    if not [c for c in conditions
-            if c.action in ['remove', 'approve']]:
-        return None
-
-    newest_spam_time = None
-
-    for item in subreddit.session.get_spam(limit=BACKLOG_LIMIT):
-        if (not newest_spam_time and
-                subreddit.last_spam < \
-                datetime.utcfromtimestamp(item.created_utc)):
-            newest_spam_time = datetime.utcfromtimestamp(item.created_utc)
-
-        if datetime.utcfromtimestamp(item.created_utc) <= \
-                subreddit.last_spam:
-            break
-
-        # only check conditions if it hasn't been manually removed by a mod
-        if in_modqueue(subreddit, item):
-            check_conditions(subreddit,
-                             item,
-                             conditions,
-                             ['approve', 'remove'])
-
-    return newest_spam_time
-
-
-def check_new_comments(subreddit, conditions):
-    """Checks new items on the /comments page for any matching conditions.
-
-    Returns the creation time of the newest item it checks.
-    """
-    # only check /comments if there are removal conditions
-    if not [c for c in conditions
-            if c.subject == 'comment' and
-               c.action == 'remove']:
-        return None
-
-    newest_comment_time = None
-
-    for item in subreddit.session.get_comments():
-        if (not newest_comment_time and
-                subreddit.last_comment < \
-                datetime.utcfromtimestamp(item.created_utc)):
-            newest_comment_time = \
-                datetime.utcfromtimestamp(item.created_utc)
-
-        if datetime.utcfromtimestamp(item.created_utc) <= \
-                subreddit.last_comment:
-            break
-
-        check_conditions(subreddit,
-                         item,
-                         conditions,
-                         'remove')
-
-    return newest_comment_time
-
-
-def check_conditions(subreddit, item, all_conditions, action_types, perform=True):
+def check_conditions(subreddit, item, conditions, perform=True):
     """Checks an item against a set of conditions.
 
     Returns the first condition that matches, or a list of all conditions that
     match if check_all_conditions is set on the subreddit. Returns None if no
     conditions match.
 
-    action_types restricts checked conditions to particular action(s).
     Setting perform to False will check, but not actually perform if matched.
     """
     if isinstance(item, reddit.objects.Submission):
-        all_conditions = [c for c in all_conditions
+        conditions = [c for c in conditions
                           if c.subject == 'submission']
     elif isinstance(item, reddit.objects.Comment):
-        all_conditions = [c for c in all_conditions
+        conditions = [c for c in conditions
                           if c.subject == 'comment']
 
-    conditions = [c for c in all_conditions
-                  if c.action in action_types]
     matched = list()
 
     for condition in conditions:
@@ -318,7 +216,8 @@ def check_conditions(subreddit, item, all_conditions, action_types, perform=True
             if condition.action == 'approve':
                 # wouldn't match a remove condition
                 if check_conditions(subreddit, item,
-                        all_conditions, 'remove', False):
+                        [c for c in conditions if c.action == 'remove'],
+                        False):
                     continue
 
             if subreddit.check_all_conditions:
@@ -560,33 +459,55 @@ def main():
             subreddit.session = r.get_subreddit(
                                     subreddit.name.encode('ascii', 'ignore'))
             subreddit.modqueue = \
-                    subreddit.session.get_modqueue(limit=BACKLOG_LIMIT)
+                    subreddit.session.get_modqueue()
             subreddit.modqueue_cache = list()
-            conditions = (subreddit.conditions
-                          .filter(Condition.parent_id == None)
-                          .all())
+            all_conditions = (subreddit.conditions
+                              .filter(Condition.parent_id == None)
+                              .all())
 
-            check_reports(subreddit, conditions)
+            # check reports
+            conditions = [c for c in all_conditions
+                          if c.subject == 'comment' and
+                             c.is_shadowbanned != True and
+                             c.action == 'remove']
+            items = subreddit.session.get_reports(limit=None)
+            stop_time = datetime.utcnow() - REPORT_BACKLOG_LIMIT
+            check_items(subreddit, items, conditions, stop_time)
 
+            # check reports html
             check_reports_html(subreddit)
 
-            newest_spam_time = check_new_spam(subreddit, conditions)
-
-            newest_submission_time = \
-                    check_new_submissions(subreddit, conditions)
-
-            if not subreddit.reported_comments_only:
-                newest_comment_time = \
-                        check_new_comments(subreddit, conditions)
-            else:
-                newest_comment_time = None
-
-            if newest_submission_time:
-                subreddit.last_submission = newest_submission_time
+            # check spam
+            items = subreddit.session.get_spam()
+            newest_spam_time = check_items(subreddit, items, all_conditions,
+                                           subreddit.last_spam, True)
             if newest_spam_time:
                 subreddit.last_spam = newest_spam_time
-            if newest_comment_time:
-                subreddit.last_comment = newest_comment_time
+
+            # check new submissions
+            conditions = [c for c in all_conditions
+                          if c.subject == 'submission' and
+                             c.is_shadowbanned != True and
+                             c.action == 'remove']
+            items = subreddit.session.get_new_by_date()
+            newest_submission_time = check_items(subreddit, items, conditions,
+                                                 subreddit.last_submission)
+            if newest_submission_time:
+                subreddit.last_submission = newest_submission_time
+
+            # check new comments
+            if not subreddit.reported_comments_only:
+                conditions = [c for c in all_conditions
+                              if c.subject == 'comment' and
+                                 c.is_shadowbanned != True and
+                                 c.action == 'remove']
+                items = subreddit.session.get_comments()
+                newest_comment_time = check_items(subreddit, items,
+                                                  conditions,
+                                                  subreddit.last_comment)
+                if newest_comment_time:
+                    subreddit.last_comment = newest_comment_time
+
             db.session.commit()
         except Exception as e:
             print e
