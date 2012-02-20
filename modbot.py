@@ -182,19 +182,21 @@ def check_items(subreddit, items, conditions, stop_time, modqueue=False):
             break
         
         if not modqueue or in_modqueue(subreddit, item):
-            check_conditions(subreddit, item, conditions)
+            # check removal conditions first
+            if not check_conditions(subreddit, item,
+                    [c for c in conditions if c.action == 'remove']):
+                check_conditions(subreddit, item,
+                        [c for c in conditions if c.action == 'approve'])
 
     return newest_item_time
 
 
-def check_conditions(subreddit, item, conditions, perform=True):
+def check_conditions(subreddit, item, conditions):
     """Checks an item against a set of conditions.
 
     Returns the first condition that matches, or a list of all conditions that
     match if check_all_conditions is set on the subreddit. Returns None if no
     conditions match.
-
-    Setting perform to False will check, but not actually perform if matched.
     """
     if isinstance(item, reddit.objects.Submission):
         conditions = [c for c in conditions
@@ -212,24 +214,14 @@ def check_conditions(subreddit, item, conditions, perform=True):
             match = False
 
         if match:
-            # additional check before approving
-            if condition.action == 'approve':
-                # wouldn't match a remove condition
-                if check_conditions(subreddit, item,
-                        [c for c in conditions if c.action == 'remove'],
-                        False):
-                    continue
-
             if subreddit.check_all_conditions:
                 matched.append(condition)
             else:
-                if perform:
-                    perform_action(subreddit, item, condition)
+                perform_action(subreddit, item, condition)
                 return condition
 
     if subreddit.check_all_conditions and len(matched) > 0:
-        if perform:
-            perform_action(subreddit, item, matched)
+        perform_action(subreddit, item, matched)
         return matched
     return None
 
