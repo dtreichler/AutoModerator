@@ -256,8 +256,8 @@ def check_condition(item, condition):
         test_string = get_meme_name(item)
     else:
         test_string = getattr(item, condition.attribute)
-        if not test_string:
-            test_string = ''
+    if not test_string:
+        test_string = ''
 
     if re.search('^'+condition.value.lower()+'$',
             test_string.lower(),
@@ -419,8 +419,10 @@ def get_meme_name(item):
             if matches:
                 url = 'http://memegenerator.net/instance/'+matches.group(1)
                 break
+    elif item.domain == 'troll.me':
+        url = item.url
     else:
-        return ''
+        return None
 
     # load the page and extract the meme name
     try:
@@ -433,8 +435,12 @@ def get_meme_name(item):
             result = soup.findAll(attrs={'class': 'rank'})[0]
             matches = re.search('#\\d+ (.+)$', result.text)
             return matches.group(1)
+        elif item.domain == 'troll.me':
+            matches = re.search('^.+?\| (.+?) \|.+?$', soup.title.text)
+            return matches.group(1)
     except:
-        return ''
+        pass
+    return None
 
 
 def main():
