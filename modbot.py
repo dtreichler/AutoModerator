@@ -410,7 +410,7 @@ def get_meme_name(item):
     # determine the URL of the page that will contain the meme name
     if item.domain in ['quickmeme.com', 'qkme.me']:
         url = item.url
-    elif item.domain == 'i.qkme.me':
+    elif item.domain.endswith('.qkme.me'):
         matches = re.search('.+/(.+?)\.jpg$', item.url)
         url = 'http://qkme.me/'+matches.group(1)
     elif item.domain.endswith('memegenerator.net'):
@@ -429,7 +429,8 @@ def get_meme_name(item):
         page = urllib2.urlopen(url)
         soup = BeautifulSoup(page)
 
-        if item.domain in ['quickmeme.com', 'qkme.me', 'i.qkme.me']:
+        if (item.domain in ['quickmeme.com', 'qkme.me'] or
+                item.domain.endswith('.qkme.me')):
             return soup.findAll(id='meme_name')[0].text
         elif item.domain.endswith('memegenerator.net'):
             result = soup.findAll(attrs={'class': 'rank'})[0]
