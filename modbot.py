@@ -266,13 +266,13 @@ def check_condition(item, condition):
     else:
         satisfied = False
 
-    # check user conditions if necessary
-    if satisfied:
-        satisfied = check_user_conditions(item, condition)
-
     # flip the result it's an inverse condition
     if condition.inverse:
         satisfied = not satisfied
+
+    # check user conditions if necessary
+    if satisfied:
+        satisfied = check_user_conditions(item, condition)
 
     # make sure all sub-conditions are satisfied as well
     if satisfied:
