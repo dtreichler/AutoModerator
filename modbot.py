@@ -563,16 +563,6 @@ def main():
             # check reports html
             check_reports_html(subreddit)
 
-            # check spam
-            items = subreddit.session.get_spam()
-            if len(all_conditions) > 0:
-                logging.info('  Checking /spam - %s conditions',
-                             len(all_conditions))
-            newest_spam_time = check_items(subreddit, items, all_conditions,
-                                           subreddit.last_spam, True)
-            if newest_spam_time:
-                subreddit.last_spam = newest_spam_time
-
             # check new submissions
             conditions = [c for c in all_conditions
                           if c.subject == 'submission' and
@@ -586,6 +576,16 @@ def main():
                                                  subreddit.last_submission)
             if newest_submission_time:
                 subreddit.last_submission = newest_submission_time
+
+            # check spam
+            items = subreddit.session.get_spam()
+            if len(all_conditions) > 0:
+                logging.info('  Checking /spam - %s conditions',
+                             len(all_conditions))
+            newest_spam_time = check_items(subreddit, items, all_conditions,
+                                           subreddit.last_spam, True)
+            if newest_spam_time:
+                subreddit.last_spam = newest_spam_time
 
             # check new comments
             if not subreddit.reported_comments_only:
