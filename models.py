@@ -7,7 +7,8 @@ from flaskext.sqlalchemy import SQLAlchemy
 
 cfg_file = SafeConfigParser()
 path_to_cfg = os.path.abspath(os.path.dirname(sys.argv[0]))
-cfg_file.read(os.path.join(path_to_cfg, 'modbot.cfg'))
+path_to_cfg = os.path.join(path_to_cfg, 'modbot.cfg')
+cfg_file.read(path_to_cfg)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = \
     cfg_file.get('database', 'system')+'://'+\

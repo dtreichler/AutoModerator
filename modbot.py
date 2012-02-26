@@ -1,4 +1,5 @@
 import re
+import logging, logging.config
 import urllib2
 from datetime import datetime, timedelta
 from time import sleep, time
@@ -8,8 +9,8 @@ from BeautifulSoup import BeautifulSoup
 from sqlalchemy.sql import and_
 from sqlalchemy.orm.exc import NoResultFound
 
-from models import cfg_file, db, Subreddit, Condition, ActionLog, \
-    AutoReapproval
+from models import cfg_file, path_to_cfg, db, Subreddit, Condition, \
+    ActionLog, AutoReapproval
 
 # don't remove/approve any reports older than this (doesn't apply to alerts)
 REPORT_BACKLOG_LIMIT = timedelta(days=2)
@@ -64,11 +65,17 @@ def perform_action(subreddit, item, condition):
         action_log.permalink = item.permalink
         action_log.url = item.url
         action_log.domain = item.domain
+        logging.info('        %sd submission "%s"',
+                        condition.action,
+                        item.title.encode('ascii', 'ignore'))
     elif isinstance(item, reddit.objects.Comment):
         action_log.permalink = ('http://www.reddit.com/r/'+
                                 item.subreddit.display_name+
                                 '/comments/'+item.link_id.split('_')[1]+
                                 '/a/'+item.id)
+        logging.info('        %sd comment by user %s',
+                        condition.action,
+                        item.author.name)
 
     db.session.add(action_log)
     db.session.commit()
@@ -99,6 +106,7 @@ def check_reports_html(subreddit):
     if not subreddit.report_threshold and not subreddit.auto_reapprove:
         return
 
+    logging.info('  Checking reports html page')
     reports_page = subreddit.session.reddit_session._request(
         'http://www.reddit.com/r/'+subreddit.name+'/about/reports')
     soup = BeautifulSoup(reports_page)
@@ -161,6 +169,7 @@ def check_reports_html(subreddit):
                 db.session.add(entry)
                 db.session.commit()
                 sub.approve()
+                logging.info('    Re-approved %s', entry.permalink)
                 sleep(2)
 
 
@@ -173,6 +182,8 @@ def check_items(subreddit, items, conditions, stop_time, modqueue=False):
         return None
 
     newest_item_time = None
+    item_count = 0
+    start_time = time()
 
     for item in items:
         item_time = datetime.utcfromtimestamp(item.created_utc)
@@ -180,6 +191,8 @@ def check_items(subreddit, items, conditions, stop_time, modqueue=False):
             newest_item_time = item_time
         elif item_time <= stop_time:
             break
+
+        item_count += 1
         
         if not modqueue or in_modqueue(subreddit, item):
             # check removal conditions first
@@ -188,6 +201,9 @@ def check_items(subreddit, items, conditions, stop_time, modqueue=False):
                 check_conditions(subreddit, item,
                         [c for c in conditions if c.action == 'approve'])
 
+    
+    logging.info('    Checked %s items in %s', item_count,
+                    elapsed_since(start_time))
     return newest_item_time
 
 
@@ -201,9 +217,13 @@ def check_conditions(subreddit, item, conditions):
     if isinstance(item, reddit.objects.Submission):
         conditions = [c for c in conditions
                           if c.subject == 'submission']
+        logging.debug('      Checking submission titled "%s"',
+                        item.title.encode('ascii', 'ignore'))
     elif isinstance(item, reddit.objects.Comment):
         conditions = [c for c in conditions
                           if c.subject == 'comment']
+        logging.debug('      Checking comment by user %s',
+                        item.author.name)
 
     matched = list()
 
@@ -231,6 +251,7 @@ def check_condition(item, condition):
     
     Returns True if it matches, or False if not
     """
+    start_time = time()
     if condition.attribute == 'user':
         if item.author != '[deleted]':
             test_string = item.author.name
@@ -259,6 +280,17 @@ def check_condition(item, condition):
     if not test_string:
         test_string = ''
 
+    if condition.inverse:
+        logging.debug('        Check #%s: "%s" NOT match ^%s$',
+                        condition.id,
+                        test_string.encode('ascii', 'ignore'),
+                        condition.value.encode('ascii', 'ignore').lower())
+    else:
+        logging.debug('        Check #%s: "%s" match ^%s$',
+                        condition.id,
+                        test_string.encode('ascii', 'ignore'),
+                        condition.value.encode('ascii', 'ignore').lower())
+
     if re.search('^'+condition.value.lower()+'$',
             test_string.lower(),
             re.DOTALL|re.UNICODE):
@@ -273,15 +305,22 @@ def check_condition(item, condition):
     # check user conditions if necessary
     if satisfied:
         satisfied = check_user_conditions(item, condition)
+        logging.debug('          User condition result = %s', satisfied)
 
     # make sure all sub-conditions are satisfied as well
     if satisfied:
+        if condition.additional_conditions:
+            logging.debug('        Checking sub-conditions:')
         for sub_condition in condition.additional_conditions:
             match = check_condition(item, sub_condition)
             if not match:
                 satisfied = False
                 break
+        if condition.additional_conditions:
+            logging.debug('        Sub-condition result = %s', satisfied)
 
+    logging.debug('        Result = %s in %s',
+                    satisfied, elapsed_since(start_time))
     return satisfied
 
 
@@ -444,16 +483,27 @@ def get_meme_name(item):
     return None
 
 
+def elapsed_since(start_time):
+    """Returns a timedelta for how much time has passed since start_time."""
+    elapsed = time() - start_time
+    return timedelta(seconds=round(elapsed))
+
+
 def main():
-    start_time = datetime.utcnow()
+    logging.config.fileConfig(path_to_cfg)
+    start_utc = datetime.utcnow()
+    start_time = time()
 
     r = reddit.Reddit(user_agent=cfg_file.get('reddit', 'user_agent'))
+    logging.info('Logging in as %s', cfg_file.get('reddit', 'username'))
     r.login(cfg_file.get('reddit', 'username'),
         cfg_file.get('reddit', 'password'))
 
     subreddits = Subreddit.query.filter(Subreddit.enabled == True).all()
 
     for subreddit in subreddits:
+        logging.info('Checking /r/%s', subreddit.name)
+        subreddit_start = time()
         try:
             subreddit.session = r.get_subreddit(
                                     subreddit.name.encode('ascii', 'ignore'))
@@ -471,6 +521,9 @@ def main():
                              c.action == 'remove']
             items = subreddit.session.get_reports(limit=None)
             stop_time = datetime.utcnow() - REPORT_BACKLOG_LIMIT
+            if len(conditions) > 0:
+                logging.info('  Checking /reports - %s conditions',
+                             len(conditions))
             check_items(subreddit, items, conditions, stop_time)
 
             # check reports html
@@ -478,6 +531,9 @@ def main():
 
             # check spam
             items = subreddit.session.get_spam()
+            if len(all_conditions) > 0:
+                logging.info('  Checking /spam - %s conditions',
+                             len(all_conditions))
             newest_spam_time = check_items(subreddit, items, all_conditions,
                                            subreddit.last_spam, True)
             if newest_spam_time:
@@ -489,6 +545,9 @@ def main():
                              c.is_shadowbanned != True and
                              c.action == 'remove']
             items = subreddit.session.get_new_by_date()
+            if len(conditions) > 0:
+                logging.info('  Checking /new - %s conditions',
+                             len(conditions))
             newest_submission_time = check_items(subreddit, items, conditions,
                                                  subreddit.last_submission)
             if newest_submission_time:
@@ -501,6 +560,9 @@ def main():
                                  c.is_shadowbanned != True and
                                  c.action == 'remove']
                 items = subreddit.session.get_comments()
+                if len(conditions) > 0:
+                    logging.info('  Checking /comments - %s conditions',
+                                 len(conditions))
                 newest_comment_time = check_items(subreddit, items,
                                                   conditions,
                                                   subreddit.last_comment)
@@ -508,10 +570,13 @@ def main():
                     subreddit.last_comment = newest_comment_time
 
             db.session.commit()
+            logging.info('  All checks completed in %s',
+                         elapsed_since(subreddit_start))
         except Exception as e:
-            print e
+            logging.error('  ERROR: %s', e)
 
-    respond_to_modmail(r.user.get_modmail(), start_time)
+    respond_to_modmail(r.user.get_modmail(), start_utc)
+    logging.info('Completed full run in %s', elapsed_since(start_time))
 
 
 if __name__ == '__main__':

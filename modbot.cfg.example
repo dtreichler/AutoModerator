@@ -9,3 +9,24 @@ password = database_password
 user_agent = user_agent (your bot's username is fine, DO NOT FAKE)
 username = reddit_username
 password = reddit_password
+
+[loggers]
+keys=root
+
+[handlers]
+keys=roothand
+
+[formatters]
+keys=rootform
+
+[logger_root]
+level=INFO
+handlers=roothand
+
+[handler_roothand]
+class=StreamHandler
+formatter=rootform
+args=(sys.stdout,)
+
+[formatter_rootform]
+format=%(message)s
