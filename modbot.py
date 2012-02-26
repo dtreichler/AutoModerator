@@ -225,6 +225,8 @@ def check_conditions(subreddit, item, conditions):
         logging.debug('      Checking comment by user %s',
                         item.author.name)
 
+    # sort the conditions so the easiest ones are checked first
+    conditions.sort(key=condition_complexity)
     matched = list()
 
     for condition in conditions:
@@ -487,6 +489,38 @@ def elapsed_since(start_time):
     """Returns a timedelta for how much time has passed since start_time."""
     elapsed = time() - start_time
     return timedelta(seconds=round(elapsed))
+
+
+def condition_complexity(condition):
+    """Returns a value representing how difficult a condition is to check."""
+    complexity = 0
+
+    # meme_name requires an external site page load
+    if condition.attribute == 'meme_name':
+        complexity += 1
+
+    # checking user requires a page load
+    if (condition.is_gold is not None or
+            condition.is_shadowbanned is not None or
+            condition.link_karma is not None or
+            condition.comment_karma is not None or
+            condition.combined_karma is not None or
+            condition.account_age is not None):
+        complexity += 1
+
+    # checking shadowbanned requires an extra page load
+    if condition.is_shadowbanned is not None:
+        complexity += 1
+
+    # commenting requires 4 seconds of sleeping
+    if condition.comment is not None:
+        complexity += 4
+
+    # add complexities of all sub-conditions too
+    for sub in condition.additional_conditions:
+        complexity += condition_complexity(sub)
+
+    return complexity
 
 
 def main():
