@@ -551,8 +551,7 @@ def main():
             # check reports
             conditions = [c for c in all_conditions
                           if c.subject == 'comment' and
-                             c.is_shadowbanned != True and
-                             c.action == 'remove']
+                             c.is_shadowbanned != True]
             items = subreddit.session.get_reports(limit=None)
             stop_time = datetime.utcnow() - REPORT_BACKLOG_LIMIT
             if len(conditions) > 0:
