@@ -349,15 +349,16 @@ def check_user_conditions(item, condition):
     if item.author == '[deleted]':
         return fail_result
 
-    # get user info
-    user = item.reddit_session.get_redditor(item.author)
-
     # shadowbanned check
     if condition.is_shadowbanned is not None:
+        user = item.reddit_session.get_redditor(item.author, fetch=False)
         try: # try to get user overview
             list(user.get_overview(limit=1))
         except: # if that failed, they're probably shadowbanned
             return fail_result
+
+    # get user info
+    user = item.reddit_session.get_redditor(item.author)
 
     # reddit gold check
     if condition.is_gold is not None:
