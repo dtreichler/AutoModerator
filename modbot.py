@@ -71,7 +71,8 @@ def perform_action(subreddit, item, condition):
         action_log.permalink = item.permalink
         action_log.url = item.url
         action_log.domain = item.domain
-        logging.info('        %sd submission "%s"',
+        logging.info('  /r/%s: %sd submission "%s"',
+                        subreddit.name,
                         condition.action,
                         item.title.encode('ascii', 'ignore'))
     elif isinstance(item, reddit.objects.Comment):
@@ -200,7 +201,10 @@ def check_items(name, items, sr_dict, stop_time):
             skip_count += 1
             continue
 
-        conditions = filter_conditions(name, subreddit.conditions)
+        conditions = (subreddit.conditions
+                        .filter(Condition.parent_id == None)
+                        .all())
+        conditions = filter_conditions(name, conditions)
 
         item_count += 1
 
