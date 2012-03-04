@@ -6,11 +6,15 @@ from time import sleep, time
 
 import reddit
 from BeautifulSoup import BeautifulSoup
+from sqlalchemy import func
 from sqlalchemy.sql import and_
 from sqlalchemy.orm.exc import NoResultFound
 
 from models import cfg_file, path_to_cfg, db, Subreddit, Condition, \
     ActionLog, AutoReapproval
+
+# global reddit session
+r = None
 
 # don't remove/approve any reports older than this (doesn't apply to alerts)
 REPORT_BACKLOG_LIMIT = timedelta(days=2)
@@ -18,6 +22,8 @@ REPORT_BACKLOG_LIMIT = timedelta(days=2)
 
 def perform_action(subreddit, item, condition):
     """Performs the action for the condition(s) and creates an ActionLog entry."""
+    global r
+
     # post the comment if one is set
     if isinstance(condition, list):
         if any([c.comment for c in condition]):
@@ -40,7 +46,7 @@ def perform_action(subreddit, item, condition):
     elif condition.action == 'approve':
         item.approve()
     elif condition.action == 'alert':
-        subreddit.session.reddit_session.compose_message(
+        r.compose_message(
             '#'+subreddit.name,
             'Reported Item Alert',
             'The following item has received a large number of reports, '+
@@ -102,12 +108,14 @@ def post_comment(item, comment):
 
 def check_reports_html(subreddit):
     """Does report alerts/reapprovals, requires loading HTML page."""
+    global r
+
     # only check if a report alert threshold or auto-reapprove is set
     if not subreddit.report_threshold and not subreddit.auto_reapprove:
         return
 
-    logging.info('  Checking reports html page')
-    reports_page = subreddit.session.reddit_session._request(
+    logging.info('Checking /r/%s reports html page', subreddit.name)
+    reports_page = r._request(
         'http://www.reddit.com/r/'+subreddit.name+'/about/reports')
     soup = BeautifulSoup(reports_page)
 
@@ -140,7 +148,7 @@ def check_reports_html(subreddit):
             permalink = approved_item.parent.parent.findAll(
                             attrs={'class': re.compile('comments')}
                         )[0]['href']
-            sub = (subreddit.session.reddit_session.get_submission(permalink))
+            sub = r.get_submission(permalink)
 
             try:
                 # see if this item has already been auto-reapproved
@@ -173,38 +181,55 @@ def check_reports_html(subreddit):
                 sleep(2)
 
 
-def check_items(subreddit, items, conditions, stop_time, modqueue=False):
-    """Checks the items generator for any matching conditions.
-
-    Returns the creation time of the newest item it checks.
-    """
-    if not conditions:
-        return None
-
-    newest_item_time = None
+def check_items(name, items, sr_dict, stop_time):
+    """Checks the items generator for any matching conditions."""
     item_count = 0
+    skip_count = 0
     start_time = time()
+
+    logging.info('Checking new %ss', name)
 
     for item in items:
         item_time = datetime.utcfromtimestamp(item.created_utc)
-        if not newest_item_time and stop_time < item_time:
-            newest_item_time = item_time
-        elif item_time <= stop_time:
+        if item_time <= stop_time:
             break
 
+        try:
+            subreddit = sr_dict[item.subreddit.display_name.lower()]
+        except KeyError:
+            skip_count += 1
+            continue
+
+        conditions = filter_conditions(name, subreddit.conditions)
+
         item_count += 1
-        
-        if not modqueue or in_modqueue(subreddit, item):
-            # check removal conditions first
+
+        if name != 'spam' or in_modqueue(item):
             if not check_conditions(subreddit, item,
                     [c for c in conditions if c.action == 'remove']):
                 check_conditions(subreddit, item,
                         [c for c in conditions if c.action == 'approve'])
 
-    
-    logging.info('    Checked %s items in %s', item_count,
-                    elapsed_since(start_time))
-    return newest_item_time
+        setattr(subreddit, 'last_'+name, item_time)
+        db.session.commit()
+
+    logging.info('  Checked %s items, skipped %s items in %s',
+            item_count, skip_count, elapsed_since(start_time))
+
+
+def filter_conditions(name, conditions):
+    """Filters a list of conditions based on the queue's needs."""
+    if name == 'spam':
+        return conditions
+    elif name == 'report':
+        return [c for c in conditions if c.subject == 'comment' and
+                c.is_shadowbanned != True]
+    elif name == 'submission':
+        return [c for c in conditions if c.action == 'remove' and
+                c.is_shadowbanned != True]
+    elif name == 'comment':
+        return [c for c in conditions if c.action == 'remove' and
+                c.is_shadowbanned != True]
 
 
 def check_conditions(subreddit, item, conditions):
@@ -388,22 +413,29 @@ def check_user_conditions(item, condition):
     return not fail_result
     
 
-def in_modqueue(subreddit, item):
-    """Checks if an item is in a subreddit's modqueue."""
-    for i in subreddit.modqueue_cache:
+def in_modqueue(item):
+    """Checks if an item is in the modqueue (hasn't been acted on yet)."""
+    global r
+    if not in_modqueue.modqueue:
+        mod_subreddit = r.get_subreddit('mod')
+        in_modqueue.modqueue = mod_subreddit.get_modqueue()
+        in_modqueue.cache = list()
+
+    for i in in_modqueue.cache:
         if i.created_utc < item.created_utc:
             return False
         if i.id == item.id:
             return True
 
-    for i in subreddit.modqueue:
-        subreddit.modqueue_cache.append(i)
+    for i in in_modqueue.modqueue:
+        in_modqueue.cache.append(i)
         if i.created_utc < item.created_utc:
             return False
         if i.id == item.id:
             return True
 
     return False
+in_modqueue.modqueue = None
 
 
 def respond_to_modmail(modmail, start_time):
@@ -529,87 +561,55 @@ def main():
     start_utc = datetime.utcnow()
     start_time = time()
 
-    r = reddit.Reddit(user_agent=cfg_file.get('reddit', 'user_agent'))
-    logging.info('Logging in as %s', cfg_file.get('reddit', 'username'))
-    r.login(cfg_file.get('reddit', 'username'),
-        cfg_file.get('reddit', 'password'))
+    global r
+    try:
+        r = reddit.Reddit(user_agent=cfg_file.get('reddit', 'user_agent'))
+        logging.info('Logging in as %s', cfg_file.get('reddit', 'username'))
+        r.login(cfg_file.get('reddit', 'username'),
+            cfg_file.get('reddit', 'password'))
 
-    subreddits = Subreddit.query.filter(Subreddit.enabled == True).all()
+        subreddits = Subreddit.query.filter(Subreddit.enabled == True).all()
+        sr_dict = dict()
+        for subreddit in subreddits:
+            sr_dict[subreddit.name.lower()] = subreddit
+        mod_subreddit = r.get_subreddit('mod')
 
-    for subreddit in subreddits:
-        logging.info('Checking /r/%s', subreddit.name)
-        subreddit_start = time()
-        try:
-            subreddit.session = r.get_subreddit(
-                                    subreddit.name.encode('ascii', 'ignore'))
-            subreddit.modqueue = \
-                    subreddit.session.get_modqueue()
-            subreddit.modqueue_cache = list()
-            all_conditions = (subreddit.conditions
-                              .filter(Condition.parent_id == None)
-                              .all())
+        # check reports
+        items = mod_subreddit.get_reports(limit=1000)
+        stop_time = datetime.utcnow() - REPORT_BACKLOG_LIMIT
+        check_items('report', items, sr_dict, stop_time)
 
-            # check reports
-            conditions = [c for c in all_conditions
-                          if c.subject == 'comment' and
-                             c.is_shadowbanned != True]
-            items = subreddit.session.get_reports(limit=None)
-            stop_time = datetime.utcnow() - REPORT_BACKLOG_LIMIT
-            if len(conditions) > 0:
-                logging.info('  Checking /reports - %s conditions',
-                             len(conditions))
-            check_items(subreddit, items, conditions, stop_time)
+        # check spam
+        items = mod_subreddit.get_spam(limit=1000)
+        stop_time = (db.session.query(func.max(Subreddit.last_spam))
+                     .filter(Subreddit.enabled == True).one()[0])
+        check_items('spam', items, sr_dict, stop_time)
 
-            # check reports html
+        # check new submissions
+        items = mod_subreddit.get_new_by_date(limit=1000)
+        stop_time = (db.session.query(func.max(Subreddit.last_submission))
+                     .filter(Subreddit.enabled == True).one()[0])
+        check_items('submission', items, sr_dict, stop_time)
+
+        # check new comments
+        comment_multi = '+'.join([s.name for s in subreddits
+                                  if not s.reported_comments_only])
+        if comment_multi:
+            comment_multi_sr = r.get_subreddit(comment_multi)
+            items = comment_multi_sr.get_comments(limit=1000)
+            stop_time = (db.session.query(func.max(Subreddit.last_comment))
+                         .filter(Subreddit.enabled == True).one()[0])
+            check_items('comment', items, sr_dict, stop_time)
+
+        respond_to_modmail(r.user.get_modmail(), start_utc)
+
+        # check reports html
+        for subreddit in subreddits:
             check_reports_html(subreddit)
 
-            # check spam
-            items = subreddit.session.get_spam()
-            if len(all_conditions) > 0:
-                logging.info('  Checking /spam - %s conditions',
-                             len(all_conditions))
-            newest_spam_time = check_items(subreddit, items, all_conditions,
-                                           subreddit.last_spam, True)
-            if newest_spam_time:
-                subreddit.last_spam = newest_spam_time
+    except Exception as e:
+        logging.error('  ERROR: %s', e)
 
-            # check new submissions
-            conditions = [c for c in all_conditions
-                          if c.subject == 'submission' and
-                             c.is_shadowbanned != True and
-                             c.action == 'remove']
-            items = subreddit.session.get_new_by_date()
-            if len(conditions) > 0:
-                logging.info('  Checking /new - %s conditions',
-                             len(conditions))
-            newest_submission_time = check_items(subreddit, items, conditions,
-                                                 subreddit.last_submission)
-            if newest_submission_time:
-                subreddit.last_submission = newest_submission_time
-
-            # check new comments
-            if not subreddit.reported_comments_only:
-                conditions = [c for c in all_conditions
-                              if c.subject == 'comment' and
-                                 c.is_shadowbanned != True and
-                                 c.action == 'remove']
-                items = subreddit.session.get_comments()
-                if len(conditions) > 0:
-                    logging.info('  Checking /comments - %s conditions',
-                                 len(conditions))
-                newest_comment_time = check_items(subreddit, items,
-                                                  conditions,
-                                                  subreddit.last_comment)
-                if newest_comment_time:
-                    subreddit.last_comment = newest_comment_time
-
-            db.session.commit()
-            logging.info('  All checks completed in %s',
-                         elapsed_since(subreddit_start))
-        except Exception as e:
-            logging.error('  ERROR: %s', e)
-
-    respond_to_modmail(r.user.get_modmail(), start_utc)
     logging.info('Completed full run in %s', elapsed_since(start_time))
 
 
