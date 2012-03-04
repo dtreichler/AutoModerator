@@ -577,25 +577,37 @@ def main():
         for subreddit in subreddits:
             sr_dict[subreddit.name.lower()] = subreddit
         mod_subreddit = r.get_subreddit('mod')
+    except Exception as e:
+        logging.error('  ERROR: %s', e)
 
-        # check reports
+    # check reports
+    try:
         items = mod_subreddit.get_reports(limit=1000)
         stop_time = datetime.utcnow() - REPORT_BACKLOG_LIMIT
         check_items('report', items, sr_dict, stop_time)
+    except Exception as e:
+        logging.error('  ERROR: %s', e)
 
-        # check spam
+    # check spam
+    try:
         items = mod_subreddit.get_spam(limit=1000)
         stop_time = (db.session.query(func.max(Subreddit.last_spam))
                      .filter(Subreddit.enabled == True).one()[0])
         check_items('spam', items, sr_dict, stop_time)
+    except Exception as e:
+        logging.error('  ERROR: %s', e)
 
-        # check new submissions
+    # check new submissions
+    try:
         items = mod_subreddit.get_new_by_date(limit=1000)
         stop_time = (db.session.query(func.max(Subreddit.last_submission))
                      .filter(Subreddit.enabled == True).one()[0])
         check_items('submission', items, sr_dict, stop_time)
+    except Exception as e:
+        logging.error('  ERROR: %s', e)
 
-        # check new comments
+    # check new comments
+    try:
         comment_multi = '+'.join([s.name for s in subreddits
                                   if not s.reported_comments_only])
         if comment_multi:
@@ -604,13 +616,18 @@ def main():
             stop_time = (db.session.query(func.max(Subreddit.last_comment))
                          .filter(Subreddit.enabled == True).one()[0])
             check_items('comment', items, sr_dict, stop_time)
+    except Exception as e:
+        logging.error('  ERROR: %s', e)
 
+    try:
         respond_to_modmail(r.user.get_modmail(), start_utc)
+    except Exception as e:
+        logging.error('  ERROR: %s', e)
 
-        # check reports html
+    # check reports html
+    try:
         for subreddit in subreddits:
             check_reports_html(subreddit)
-
     except Exception as e:
         logging.error('  ERROR: %s', e)
 
