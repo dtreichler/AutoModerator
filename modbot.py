@@ -190,32 +190,37 @@ def check_items(name, items, sr_dict, stop_time):
 
     logging.info('Checking new %ss', name)
 
-    for item in items:
-        item_time = datetime.utcfromtimestamp(item.created_utc)
-        if item_time <= stop_time:
-            break
+    try:
+        for item in items:
+            item_time = datetime.utcfromtimestamp(item.created_utc)
+            if item_time <= stop_time:
+                break
 
-        try:
-            subreddit = sr_dict[item.subreddit.display_name.lower()]
-        except KeyError:
-            skip_count += 1
-            continue
+            try:
+                subreddit = sr_dict[item.subreddit.display_name.lower()]
+            except KeyError:
+                skip_count += 1
+                continue
 
-        conditions = (subreddit.conditions
-                        .filter(Condition.parent_id == None)
-                        .all())
-        conditions = filter_conditions(name, conditions)
+            conditions = (subreddit.conditions
+                            .filter(Condition.parent_id == None)
+                            .all())
+            conditions = filter_conditions(name, conditions)
 
-        item_count += 1
+            item_count += 1
 
-        if name != 'spam' or in_modqueue(item):
-            if not check_conditions(subreddit, item,
-                    [c for c in conditions if c.action == 'remove']):
-                check_conditions(subreddit, item,
-                        [c for c in conditions if c.action == 'approve'])
+            if name != 'spam' or in_modqueue(item):
+                if not check_conditions(subreddit, item,
+                        [c for c in conditions if c.action == 'remove']):
+                    check_conditions(subreddit, item,
+                            [c for c in conditions if c.action == 'approve'])
 
-        setattr(subreddit, 'last_'+name, item_time)
+            setattr(subreddit, 'last_'+name, item_time)
+
         db.session.commit()
+    except:
+        logging.error('  ERROR: %s', e)
+        db.session.rollback()
 
     logging.info('  Checked %s items, skipped %s items in %s',
             item_count, skip_count, elapsed_since(start_time))
@@ -581,43 +586,31 @@ def main():
         logging.error('  ERROR: %s', e)
 
     # check reports
-    try:
-        items = mod_subreddit.get_reports(limit=1000)
-        stop_time = datetime.utcnow() - REPORT_BACKLOG_LIMIT
-        check_items('report', items, sr_dict, stop_time)
-    except Exception as e:
-        logging.error('  ERROR: %s', e)
+    items = mod_subreddit.get_reports(limit=1000)
+    stop_time = datetime.utcnow() - REPORT_BACKLOG_LIMIT
+    check_items('report', items, sr_dict, stop_time)
 
     # check spam
-    try:
-        items = mod_subreddit.get_spam(limit=1000)
-        stop_time = (db.session.query(func.max(Subreddit.last_spam))
-                     .filter(Subreddit.enabled == True).one()[0])
-        check_items('spam', items, sr_dict, stop_time)
-    except Exception as e:
-        logging.error('  ERROR: %s', e)
+    items = mod_subreddit.get_spam(limit=1000)
+    stop_time = (db.session.query(func.max(Subreddit.last_spam))
+                 .filter(Subreddit.enabled == True).one()[0])
+    check_items('spam', items, sr_dict, stop_time)
 
     # check new submissions
-    try:
-        items = mod_subreddit.get_new_by_date(limit=1000)
-        stop_time = (db.session.query(func.max(Subreddit.last_submission))
-                     .filter(Subreddit.enabled == True).one()[0])
-        check_items('submission', items, sr_dict, stop_time)
-    except Exception as e:
-        logging.error('  ERROR: %s', e)
+    items = mod_subreddit.get_new_by_date(limit=1000)
+    stop_time = (db.session.query(func.max(Subreddit.last_submission))
+                 .filter(Subreddit.enabled == True).one()[0])
+    check_items('submission', items, sr_dict, stop_time)
 
     # check new comments
-    try:
-        comment_multi = '+'.join([s.name for s in subreddits
-                                  if not s.reported_comments_only])
-        if comment_multi:
-            comment_multi_sr = r.get_subreddit(comment_multi)
-            items = comment_multi_sr.get_comments(limit=1000)
-            stop_time = (db.session.query(func.max(Subreddit.last_comment))
-                         .filter(Subreddit.enabled == True).one()[0])
-            check_items('comment', items, sr_dict, stop_time)
-    except Exception as e:
-        logging.error('  ERROR: %s', e)
+    comment_multi = '+'.join([s.name for s in subreddits
+                              if not s.reported_comments_only])
+    if comment_multi:
+        comment_multi_sr = r.get_subreddit(comment_multi)
+        items = comment_multi_sr.get_comments(limit=1000)
+        stop_time = (db.session.query(func.max(Subreddit.last_comment))
+                     .filter(Subreddit.enabled == True).one()[0])
+        check_items('comment', items, sr_dict, stop_time)
 
     try:
         respond_to_modmail(r.user.get_modmail(), start_utc)
