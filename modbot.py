@@ -58,7 +58,7 @@ def perform_action(subreddit, item, condition):
     action_log.action_time = datetime.utcnow()
     action_log.action = condition.action
 
-    if isinstance(item, str):
+    if isinstance(item, str) or isinstance(item, unicode):
         # for report threshold alert, we only know permalink to item
         action_log.permalink = item
     else:
