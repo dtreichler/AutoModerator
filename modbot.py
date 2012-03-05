@@ -2,7 +2,7 @@ import re
 import logging, logging.config
 import urllib2
 from datetime import datetime, timedelta
-from time import sleep, time
+from time import time
 
 import reddit
 from BeautifulSoup import BeautifulSoup
@@ -87,8 +87,6 @@ def perform_action(subreddit, item, condition):
     db.session.add(action_log)
     db.session.commit()
 
-    sleep(2)
-
 
 def post_comment(item, comment):
     """Posts a distinguished comment as a reply to an item.
@@ -102,9 +100,7 @@ def post_comment(item, comment):
                     'questions or concerns.*')
     if isinstance(item, reddit.objects.Submission):
         response = item.add_comment(comment+disclaimer)
-        sleep(2)
         response['data']['things'][0].distinguish()
-        sleep(2)
 
 
 def check_reports_html(subreddit):
@@ -179,13 +175,13 @@ def check_reports_html(subreddit):
                 db.session.commit()
                 sub.approve()
                 logging.info('    Re-approved %s', entry.permalink)
-                sleep(2)
 
 
 def check_items(name, items, sr_dict, stop_time):
     """Checks the items generator for any matching conditions."""
     item_count = 0
     skip_count = 0
+    skip_subs = set()
     start_time = time()
 
     logging.info('Checking new %ss', name)
@@ -200,6 +196,7 @@ def check_items(name, items, sr_dict, stop_time):
                 subreddit = sr_dict[item.subreddit.display_name.lower()]
             except KeyError:
                 skip_count += 1
+                skip_subs.add(item.subreddit.display_name.lower())
                 continue
 
             conditions = (subreddit.conditions
@@ -222,8 +219,9 @@ def check_items(name, items, sr_dict, stop_time):
         logging.error('  ERROR: %s', e)
         db.session.rollback()
 
-    logging.info('  Checked %s items, skipped %s items in %s',
-            item_count, skip_count, elapsed_since(start_time))
+    logging.info('  Checked %s items, skipped %s items in %s (skips: %s)',
+            item_count, skip_count, elapsed_since(start_time),
+            ', '.join(skip_subs))
 
 
 def filter_conditions(name, conditions):
@@ -485,7 +483,6 @@ def respond_to_modmail(modmail, start_time):
                 'please wait at least 5 minutes before messaging the mods, '
                 'this post would have been approved automatically even '
                 'without you sending this message.')
-            sleep(2)
 
 
 def get_meme_name(item):
@@ -554,9 +551,9 @@ def condition_complexity(condition):
     if condition.is_shadowbanned is not None:
         complexity += 1
 
-    # commenting requires 4 seconds of sleeping
+    # commenting+distinguishing requires 2 requests
     if condition.comment is not None:
-        complexity += 4
+        complexity += 2
 
     # add complexities of all sub-conditions too
     for sub in condition.additional_conditions:
