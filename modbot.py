@@ -103,78 +103,92 @@ def post_comment(item, comment):
         response['data']['things'][0].distinguish()
 
 
-def check_reports_html(subreddit):
+def check_reports_html(sr_dict):
     """Does report alerts/reapprovals, requires loading HTML page."""
     global r
 
-    # only check if a report alert threshold or auto-reapprove is set
-    if not subreddit.report_threshold and not subreddit.auto_reapprove:
-        return
-
-    logging.info('Checking /r/%s reports html page', subreddit.name)
-    reports_page = r._request(
-        'http://www.reddit.com/r/'+subreddit.name+'/about/reports')
+    logging.info('Checking reports html page')
+    reports_page = r._request('http://www.reddit.com/r/mod/about/reports')
     soup = BeautifulSoup(reports_page)
 
     # check for report alerts
-    if subreddit.report_threshold:
-        for reported_item in soup.findAll(
-                attrs={'class': 'rounded reported-stamp stamp'}):
-            reports = re.search('(\d+)$', reported_item.text).group(1)
-            if int(reports) >= subreddit.report_threshold:
-                permalink = str(reported_item.parent.a['href'])
-                try:
-                    # check log to see if this item has already had an alert
-                    ActionLog.query.filter(
-                        and_(ActionLog.subreddit_id == subreddit.id,
-                             ActionLog.permalink == permalink,
-                             ActionLog.action == 'alert')).one()
-                except NoResultFound:
-                    c = Condition()
-                    c.action = 'alert'
-                    perform_action(subreddit, permalink, c)
+    for reported_item in soup.findAll(
+            attrs={'class': 'rounded reported-stamp stamp'}):
+        permalink = (reported_item.parent
+                     .findAll('li', attrs={'class': 'first'})[0].a['href'])
+        sub_name = re.search('^http://www.reddit.com/r/([^/]+)',
+                    permalink).group(1).lower()
+        try:
+            subreddit = sr_dict[sub_name]
+        except KeyError:
+            continue
+
+        if not subreddit.report_threshold:
+            continue
+
+        reports = re.search('(\d+)$', reported_item.text).group(1)
+        if int(reports) >= subreddit.report_threshold:
+            try:
+                # check log to see if this item has already had an alert
+                ActionLog.query.filter(
+                    and_(ActionLog.subreddit_id == subreddit.id,
+                         ActionLog.permalink == permalink,
+                         ActionLog.action == 'alert')).one()
+            except NoResultFound:
+                c = Condition()
+                c.action = 'alert'
+                perform_action(subreddit, permalink, c)
 
     # do auto-reapprovals
-    if subreddit.auto_reapprove:
-        for approved_item in soup.findAll(
-                attrs={'class': 'approval-checkmark'}):
-            report_stamp = approved_item.parent.parent.findAll(
-                            attrs={'class': 'rounded reported-stamp stamp'})
-            num_reports = re.search('(\d+)$', report_stamp[0].text).group(1)
-            num_reports = int(num_reports)
-            permalink = approved_item.parent.parent.findAll(
-                            attrs={'class': re.compile('comments')}
-                        )[0]['href']
-            sub = r.get_submission(permalink)
+    for approved_item in soup.findAll(
+            attrs={'class': 'approval-checkmark'}):
+        report_stamp = approved_item.parent.parent.findAll(
+                        attrs={'class': 'rounded reported-stamp stamp'})[0]
 
-            try:
-                # see if this item has already been auto-reapproved
-                entry = (AutoReapproval.query.filter(
-                            and_(AutoReapproval.subreddit_id == subreddit.id,
-                                 AutoReapproval.permalink == permalink))
-                            .one())
-                in_db = True
-            except NoResultFound:
-                entry = AutoReapproval()
-                entry.subreddit_id = subreddit.id
-                entry.permalink = permalink
-                entry.original_approver = (re.search('approved by (.+)$',
-                                                     approved_item['title'])
-                                           .group(1))
-                entry.total_reports = 0
-                entry.first_approval_time = datetime.utcnow()
-                in_db = False
+        permalink = (report_stamp.parent
+                     .findAll('li', attrs={'class': 'first'})[0].a['href'])
+        sub_name = re.search('^http://www.reddit.com/r/([^/]+)',
+                    permalink).group(1).lower()
+        try:
+            subreddit = sr_dict[sub_name]
+        except KeyError:
+            continue
 
-            if (in_db or
-                    approved_item['title'].lower() != \
-                    'approved by '+cfg_file.get('reddit', 'username').lower()):
-                entry.total_reports += num_reports
-                entry.last_approval_time = datetime.utcnow()
+        if not subreddit.auto_reapprove:
+            continue
 
-                db.session.add(entry)
-                db.session.commit()
-                sub.approve()
-                logging.info('    Re-approved %s', entry.permalink)
+        num_reports = re.search('(\d+)$', report_stamp.text).group(1)
+        num_reports = int(num_reports)
+        sub = r.get_submission(permalink)
+
+        try:
+            # see if this item has already been auto-reapproved
+            entry = (AutoReapproval.query.filter(
+                        and_(AutoReapproval.subreddit_id == subreddit.id,
+                             AutoReapproval.permalink == permalink))
+                        .one())
+            in_db = True
+        except NoResultFound:
+            entry = AutoReapproval()
+            entry.subreddit_id = subreddit.id
+            entry.permalink = permalink
+            entry.original_approver = (re.search('approved by (.+)$',
+                                                 approved_item['title'])
+                                       .group(1))
+            entry.total_reports = 0
+            entry.first_approval_time = datetime.utcnow()
+            in_db = False
+
+        if (in_db or
+                approved_item['title'].lower() != \
+                'approved by '+cfg_file.get('reddit', 'username').lower()):
+            entry.total_reports += num_reports
+            entry.last_approval_time = datetime.utcnow()
+
+            db.session.add(entry)
+            db.session.commit()
+            sub.approve()
+            logging.info('    Re-approved %s', entry.permalink)
 
 
 def check_items(name, items, sr_dict, stop_time):
@@ -609,6 +623,7 @@ def main():
                      .filter(Subreddit.enabled == True).one()[0])
         check_items('comment', items, sr_dict, stop_time)
 
+    # respond to modmail
     try:
         respond_to_modmail(r.user.get_modmail(), start_utc)
     except Exception as e:
@@ -616,8 +631,7 @@ def main():
 
     # check reports html
     try:
-        for subreddit in subreddits:
-            check_reports_html(subreddit)
+        check_reports_html(sr_dict)
     except Exception as e:
         logging.error('  ERROR: %s', e)
 
