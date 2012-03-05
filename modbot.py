@@ -159,7 +159,6 @@ def check_reports_html(sr_dict):
 
         num_reports = re.search('(\d+)$', report_stamp.text).group(1)
         num_reports = int(num_reports)
-        sub = r.get_submission(permalink)
 
         try:
             # see if this item has already been auto-reapproved
@@ -182,12 +181,13 @@ def check_reports_html(sr_dict):
         if (in_db or
                 approved_item['title'].lower() != \
                 'approved by '+cfg_file.get('reddit', 'username').lower()):
+            sub = r.get_submission(permalink)
+            sub.approve()
             entry.total_reports += num_reports
             entry.last_approval_time = datetime.utcnow()
 
             db.session.add(entry)
             db.session.commit()
-            sub.approve()
             logging.info('    Re-approved %s', entry.permalink)
 
 
