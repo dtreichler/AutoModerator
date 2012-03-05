@@ -218,7 +218,7 @@ def check_items(name, items, sr_dict, stop_time):
             setattr(subreddit, 'last_'+name, item_time)
 
         db.session.commit()
-    except:
+    except Exception as e:
         logging.error('  ERROR: %s', e)
         db.session.rollback()
 
