@@ -197,6 +197,7 @@ def check_items(name, items, sr_dict, stop_time):
     skip_count = 0
     skip_subs = set()
     start_time = time()
+    seen_subs = set()
 
     logging.info('Checking new %ss', name)
 
@@ -218,15 +219,17 @@ def check_items(name, items, sr_dict, stop_time):
                             .all())
             conditions = filter_conditions(name, conditions)
 
-            item_count += 1
-
             if name != 'spam' or in_modqueue(item):
                 if not check_conditions(subreddit, item,
                         [c for c in conditions if c.action == 'remove']):
                     check_conditions(subreddit, item,
                             [c for c in conditions if c.action == 'approve'])
+                    
+            item_count += 1
 
-            setattr(subreddit, 'last_'+name, item_time)
+            if subreddit.name not in seen_subs:
+                setattr(subreddit, 'last_'+name, item_time)
+                seen_subs.add(subreddit.name)
 
         db.session.commit()
     except Exception as e:
