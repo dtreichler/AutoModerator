@@ -137,7 +137,7 @@ class ActionLog(db.Model):
                              nullable=False)
     title = db.Column(db.Text)
     user = db.Column(db.String(255))
-    url = db.Column(db.String(255))
+    url = db.Column(db.Text)
     domain = db.Column(db.String(255))
     permalink = db.Column(db.String(255))
     created_utc = db.Column(db.DateTime)
