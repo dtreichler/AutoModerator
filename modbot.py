@@ -42,7 +42,7 @@ def perform_action(subreddit, item, condition):
 
     # perform the action
     if condition.action == 'remove':
-        item.remove()
+        item.remove(condition.spam)
     elif condition.action == 'approve':
         item.approve()
     elif condition.action == 'alert':
@@ -304,10 +304,8 @@ def check_condition(item, condition):
     """
     start_time = time()
     if condition.attribute == 'user':
-        if item.author != '[deleted]':
+        if item.author:
             test_string = item.author.name
-        else:
-            test_string = item.author
     elif (condition.attribute == 'body' and
             isinstance(item, reddit.objects.Submission)):
         test_string = item.selftext
@@ -395,7 +393,7 @@ def check_user_conditions(item, condition):
         fail_result = False
 
     # if they deleted the post, fail user checks
-    if item.author == '[deleted]':
+    if not item.author:
         return fail_result
 
     # shadowbanned check
