@@ -100,7 +100,7 @@ def post_comment(item, comment):
                     'questions or concerns.*')
     if isinstance(item, reddit.objects.Submission):
         response = item.add_comment(comment+disclaimer)
-        response['data']['things'][0].distinguish()
+        response.distinguish()
 
 
 def check_reports_html(sr_dict):
