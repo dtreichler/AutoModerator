@@ -79,6 +79,7 @@ class Condition(db.Model):
     parent_id - The id of the condition this is a sub-condition of. If this
         is a top-level condition, will be null
     action - Which action to perform if this condition is matched
+    spam - Whether to train the spam filter if this is a removal
     comment - If set, bot will post (and distinguish) this comment when an
         action is performed due to this condition
     notes - not used by bot, space to keep notes on a condition
@@ -119,6 +120,7 @@ class Condition(db.Model):
                                'remove',
                                'alert',
                                name='action'))
+    spam = db.Column(db.Boolean)
     comment = db.Column(db.Text)
     notes = db.Column(db.Text)
 
@@ -139,7 +141,7 @@ class ActionLog(db.Model):
                              nullable=False)
     title = db.Column(db.Text)
     user = db.Column(db.String(255))
-    url = db.Column(db.String(255))
+    url = db.Column(db.Text)
     domain = db.Column(db.String(255))
     permalink = db.Column(db.String(255))
     created_utc = db.Column(db.DateTime)
