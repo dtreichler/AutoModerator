@@ -10,11 +10,13 @@ path_to_cfg = os.path.abspath(os.path.dirname(sys.argv[0]))
 path_to_cfg = os.path.join(path_to_cfg, 'modbot.cfg')
 cfg_file.read(path_to_cfg)
 
+
+#    cfg_file.get('database', 'username')+':'+\
+#    cfg_file.get('database', 'password')+'@'+\
+#    cfg_file.get('database', 'host')+'/'+\
+
 app.config['SQLALCHEMY_DATABASE_URI'] = \
     cfg_file.get('database', 'system')+'://'+\
-    cfg_file.get('database', 'username')+':'+\
-    cfg_file.get('database', 'password')+'@'+\
-    cfg_file.get('database', 'host')+'/'+\
     cfg_file.get('database', 'database')
 db = SQLAlchemy(app)
 
