@@ -41,7 +41,8 @@ class Subreddit(db.Model):
     reported_comments_only - If True, will only check conditions against
         reported comments. If False, checks all comments in the subreddit.
         Extremely-active subreddits are probably best set to True.
-
+    approve_nonspam - If False, submissions that are not marked as spam by the
+        filter will not be checked against 'approve' conditions
     """
 
     __tablename__ = 'subreddits'
@@ -57,7 +58,7 @@ class Subreddit(db.Model):
     check_all_conditions = db.Column(db.Boolean, nullable=False, default=False)
     reported_comments_only = db.Column(db.Boolean, nullable=False,
                                        default=False)
-
+    approve_nonspam = db.Column(db.Boolean, nullable=False, default=False)
 
 class Condition(db.Model):
 

@@ -224,7 +224,7 @@ def check_items(name, items, sr_dict, stop_time):
                         [c for c in conditions if c.action == 'remove']):
                     check_conditions(subreddit, item,
                             [c for c in conditions if c.action == 'approve'])
-                    
+
             item_count += 1
 
             if subreddit.name not in seen_subs:
@@ -249,8 +249,11 @@ def filter_conditions(name, conditions):
         return [c for c in conditions if c.subject == 'comment' and
                 c.is_shadowbanned != True]
     elif name == 'submission':
-        return [c for c in conditions if c.action == 'remove' and
-                c.is_shadowbanned != True]
+        if conditions[0].subreddit.approve_nonspam:
+            return [c for c in conditions if c.is_shadowbanned != True]
+        else:
+            return [c for c in conditions if c.action == 'remove' and
+                    c.is_shadowbanned != True]
     elif name == 'comment':
         return [c for c in conditions if c.action == 'remove' and
                 c.is_shadowbanned != True]
@@ -299,7 +302,7 @@ def check_conditions(subreddit, item, conditions):
 
 def check_condition(item, condition):
     """Checks an item against a single condition (and sub-conditions).
-    
+
     Returns True if it matches, or False if not
     """
     start_time = time()
@@ -433,7 +436,7 @@ def check_user_conditions(item, condition):
 
     # user passed all checks
     return not fail_result
-    
+
 
 def in_modqueue(item):
     """Checks if an item is in the modqueue (hasn't been acted on yet)."""
