@@ -34,8 +34,8 @@ I run it using a cronjob that checks through the list of subreddits every 5 minu
 * subject = `submission`
 * attribute = `domain`
 * value = `self\.subredditname`
-* min\_account\_age = `3`
-* min\_combined\_karma = `10`
+* account\_age = `3`
+* combined\_karma = `10`
 * action = `approve`
 
 ### Allow only submissions from reddit.com and self-posts (e.g. /r/bestof)
