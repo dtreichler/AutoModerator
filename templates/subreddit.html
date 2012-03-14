@@ -1,0 +1,20 @@
+{%extends "base.html" %}
+{% block title %}/r/{{ s.name }}{% endblock %}
+{% block content %}
+    <div id="srname">{{ s.name }}</div>
+    {% for c in s.conditions %}
+        <div class="condition"><a href="#" onclick="expand(this)" class="condname">Condition {{ c.id }}{% if c.notes %}: {{ c.notes }}{% endif %}</a>
+        <div class="cond-vars collapsed">
+            <ul class="attr">
+            {% for attr in ['subject','attribute','value','is_gold','is_shadowbanned','account_age','link_karma','comment_karma','combined_karma','spam','comment','inverse','action'] %}
+                {% if c.__getattribute__(attr) %}
+                    <li>{{ attr }} = <code>{{ c.__getattribute__(attr) }}</code></li>
+                {% endif %}
+            {% endfor %}
+            
+            </ul>
+        </div>
+        </div>
+    {% endfor %}
+    </ul>
+{% endblock %} 

@@ -1,0 +1,4 @@
+#document { width: 940px; margin: 30px auto 0 auto; }
+code { display: inline; background-color: #F8F8F8; border: solid 1px #EAEAEA }
+.collapsed { display: none }
+ul.attr li { margin: 15px 0; }
