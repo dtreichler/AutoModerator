@@ -249,7 +249,7 @@ def filter_conditions(name, conditions):
         return [c for c in conditions if c.subject == 'comment' and
                 c.is_shadowbanned != True]
     elif name == 'submission':
-        if conditions[0].subreddit.approve_nonspam:
+        if conditions[0].subreddit.confirm_ham:
             return [c for c in conditions if c.is_shadowbanned != True]
         else:
             return [c for c in conditions if c.action == 'remove' and
